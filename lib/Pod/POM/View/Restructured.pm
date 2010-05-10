@@ -1,5 +1,5 @@
 # Original authors: don
-# $Revision: 1529 $
+# $Revision: 1595 $
 
 # Copyright (c) 2010 Don Owens <don@regexguy.com>.  All rights reserved.
 #
@@ -33,8 +33,16 @@ Pod::POM::View::Restructured - View for Pod::POM that outputs reStructuredText
 
 =head1 DESCRIPTION
 
-This module outputs reStructuredText that is expected to be used with Sphinx.  Verbatim sections (indented paragraphs) in the POD will be output with syntax hilighting for Perl code by default.  See L</"POD commands specifically for reStructuredText"> for how to change this for a particular block.
+This module outputs reStructuredText that is expected to be used
+with Sphinx.  Verbatim sections (indented paragraphs) in the POD
+will be output with syntax hilighting for Perl code by default.
+See L</"POD commands specifically for reStructuredText"> for how
+to change this for a particular block.
 
+For a list of changes in recent versions, see the documentation
+for L<Pod::POM::View::Restructured::Changes>.
+
+This module can be downloaded from L<http://www.cpan.org/authors/id/D/DO/DOWENS/>.
 
 =cut
 
@@ -46,7 +54,7 @@ use Pod::POM;
 
 package Pod::POM::View::Restructured;
 
-our $VERSION = '0.01'; # change in POD below!
+our $VERSION = '0.02'; # change in POD below!
 
 use base 'Pod::POM::View::Text';
 
@@ -54,21 +62,36 @@ use base 'Pod::POM::View::Text';
 
 =head1 METHODS
 
-=head2 C<new()>
+=head2 C<new(\%params)>
 
-Constructor.
+Constructor.  \%params is optional.  If present, the following keys are valid:
+
+=over 4
+
+=item C<callbacks>
+
+See documentation below for C<convert_file()>.
+
+=back
 
 =cut
 
 sub new {
-    my ($class) = @_;
-    my $self = bless { seen_something => 0, title_set => 0 }, ref($class) || $class;
+    my ($class, $params) = @_;
+    $params = { } unless $params and UNIVERSAL::isa($params, 'HASH');
+    
+    my $self = bless { seen_something => 0, title_set => 0, params => { } }, ref($class) || $class;
+
+    my $callbacks = $params->{callbacks};
+    $callbacks = { } unless $callbacks;
+    $self->{callbacks} = $callbacks;
+    
     return $self;
 }
 
 =pod
 
-=head2 C<convert_file($source_file, $title, $dest_file)>
+=head2 C<convert_file($source_file, $title, $dest_file, $callbacks)>
 
 Converts the POD in C<$source_file> to reStructuredText.  If
 C<$dest_file> is defined, it writes the output there.  If
@@ -83,10 +106,24 @@ handles.
 
 =cut
 sub convert_file {
-    my ($self, $source_file, $title, $dest_file) = @_;
+    my ($self, $source_file, $title, $dest_file, $callbacks) = @_;
 
-    my $view = Pod::POM::View::Restructured->new;
+    my $cb;
+    if ($callbacks) {
+        $cb = { %{ $self->{callbacks} }, %$callbacks };
+    }
+    else {
+        $cb = $self->{callbacks};
+    }
+    
+    my $view = Pod::POM::View::Restructured->new({ callbacks => $cb });
     my $parser = Pod::POM->new;
+
+    unless (-r $source_file) {
+        warn "can't read source file $source_file";
+        return undef;
+    }
+    
     my $pom = $parser->parse_file($source_file);
 
     $view->{title_set} = 1 if defined($title);
@@ -152,7 +189,25 @@ provided, an attempt will be made to infer the title from the
 NAME section in the POD, if it exists.  As a last resort, a title
 will be generated that looks like "section_(\d+)".
 
+=item C<callbacks>
+
+A reference to a hash containing names and the corresponding callbacks.
+
+Currently the only valid callback is C<link>.  It is given the
+text inside a LE<lt>E<gt> section from the POD, and is expected to return a
+tuple C<($url, $label)>.  If the value returned for C<$label> is
+undefined, the value of C<$url> is used as the label.
+
+=item C<no_toc>
+
+Causes the item to not be printed to the index or return in the C<toc> field.
+
 =back
+
+This method returns a hash ref with a table of contents (the
+C<toc> field) suitable for a reStructuredText table of contents.
+
+E.g.,
 
  my $conv = Pod::POM::View::Restructured->new;
  
@@ -189,7 +244,7 @@ sub convert_files {
     foreach my $spec (@$file_spec) {
         $count++;
         my $data = $self->convert_file($spec->{source_file}, $spec->{title},
-                                       $spec->{dest_file});
+                                       $spec->{dest_file}, $spec->{callbacks});
         
         my $this_title = $data->{title};
         # print STDERR Data::Dumper->Dump([ $this_title ], [ 'this_title' ]) . "\n\n";
@@ -216,14 +271,18 @@ sub convert_files {
             close $out_fh;
         }
 
-        $toc .= '   ' . $name . "\n";
+        unless ($spec->{no_toc}) {
+            $toc .= '   ' . $name . "\n";
+        }
         
-        if ($index_fh) {
+        if ($index_fh and not $spec->{no_toc}) {
             print $index_fh "   " . $name . "\n";
         }
     }
 
-    print $index_fh "\n";
+    if ($index_fh) {
+        print $index_fh "\n";
+    }
 
     return { toc => $toc };
 }
@@ -506,16 +565,59 @@ sub view_seq_zero {
 sub view_seq_link {
     my ($self, $text) = @_;
 
-    if ($text =~ m{\Ahttps?://}) {
+    # FIXME: determine if has label, if manpage, etc., and pass that info along to the callback,
+    #        instead of just the text, e.g.,
+    #        $link_cb->($label, $name, $sec, $url);
+    my $link_cb = $self->{callbacks}{link};
+    if ($link_cb) {
+        my ($url, $label) = $link_cb->($text);
+
+        if (defined($url)) {
+            if ($url eq '' and defined($label) and $label ne '') {
+                $text = $label;
+            }
+            elsif (defined($label) and $label ne '') {
+                $text = qq{`$label <$url>`_};
+            }
+            else {
+                $text = qq{`$url <$url>`_};
+            }
+
+            return $text;
+        }
+    }
+
+    if ($text =~ m{\A/(.+)}) {
+        (my $section = $1) =~ s/\A"(.+)"/$1/;
+        $text = qq{`$section`_};
+    }
+    elsif ($text =~ m{\Ahttps?://}) {
         $text = qq{`$text <$text>`_};
     }
     elsif ($text =~ /::/) {
-        my $url = "http://search.cpan.org/search?query=$text&mode=module";
-        $text = qq{\ `$text <$url>`_\ };
+        my $label = $text;
+        my $module = $text;
+        if ($text =~ /\A(.+?)\|(.+::.+)/) {
+            $label = $1;
+            $module = $2;
+        }
+
+        $module = $self->_url_encode($module);
+        my $url = "http://search.cpan.org/search?query=$module&mode=module";
+        $text = qq{`$label <$url>`_};
     }
     
     return $text;
 }
+
+sub _url_encode {
+    my ($self, $str) = @_;
+    
+    use bytes;
+    $str =~ s{([^A-Za-z0-9_])}{sprintf("%%%02x", ord($1))}eg;
+    return $str;
+}
+
 
 =pod
 
@@ -577,7 +679,7 @@ to invoke a command in reStructuredText by accident.
 
 =head1 DEPENDENCIES
 
-Inherits from Pod::POM::View::Text that comes with the Pod::POM distribution.
+Inherits from L<Pod::POM::View::Text> that comes with the Pod::POM distribution.
 
 =head1 AUTHOR
 
@@ -611,7 +713,7 @@ Pygments (used by Sphinx for syntax highlighting): L<http://pygments.org/>
 
 =head1 VERSION
 
- 0.01
+0.02
 
 =cut
 

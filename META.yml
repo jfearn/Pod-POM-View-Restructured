@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               Pod-POM-View-Restructured
-version:            0.01
+version:            0.02
 abstract:           View for Pod::POM that outputs reStructuredText
 author:  []
 license:            unknown

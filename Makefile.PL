@@ -1,5 +1,5 @@
 # Original authors: don
-# $Revision: 1525 $
+# $Revision: 1595 $
 
 use strict;
 use warnings;
@@ -11,7 +11,10 @@ WriteMakefile(
               VERSION_FROM => 'lib/Pod/POM/View/Restructured.pm',
               ABSTRACT_FROM => 'lib/Pod/POM/View/Restructured.pm',
               # AUTHOR => '',
-              PM => { 'lib/Pod/POM/View/Restructured.pm' => '$(INST_LIBDIR)/Restructured.pm' },
+              PM => {
+                     'lib/Pod/POM/View/Restructured.pm' => '$(INST_LIBDIR)/Restructured.pm',
+                     'lib/Pod/POM/View/Restructured/Changes.pm' => '$(INST_LIBDIR)/Restructured/Changes.pm',
+                    },
               dist => { COMPRESS => 'gzip -9f', SUFFIX => 'gz' },
               # DIR => [ ],
               EXE_FILES => [ 'bin/pod2rst' ],
