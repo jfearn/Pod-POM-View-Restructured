@@ -10,6 +10,16 @@ Pod::POM::View::Restructured::Changes - List of major changes in Pod::POM::View:
 
 =head1 CHANGES
 
+=head2 Version 0.03
+
+=over 4
+
+=item Added C<namespace> option.
+
+=item Added conversion tests.
+
+=back
+
 =head2 Version 0.02
 
 =over 4
